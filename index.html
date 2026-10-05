@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="id"><head><base target="_top"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<style>
+*{box-sizing:border-box}html,body{margin:0;height:100%;background:#000;color:#fff;font-family:Segoe UI,Arial,sans-serif;overflow:hidden}
+video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+.top{position:fixed;top:0;left:0;right:0;padding:calc(10px + env(safe-area-inset-top,0px)) 14px 10px;background:#000a;display:flex;justify-content:space-between;align-items:center;font-size:.95rem;z-index:2}
+.top b{font-size:1.1rem}.top button{background:none;border:1px solid #fff8;color:#fff;border-radius:8px;padding:5px 10px}
+.frame{position:fixed;top:50%;left:50%;width:min(70vw,320px);aspect-ratio:1;transform:translate(-50%,-50%);border:4px solid #f2b705;border-radius:18px;box-shadow:0 0 0 100vmax #0005;z-index:1}
+.bot{position:fixed;left:0;right:0;bottom:0;padding:12px 14px calc(12px + env(safe-area-inset-bottom,0px));background:#000b;z-index:2}
+.bot div{display:flex;gap:8px}.bot input{flex:1;padding:12px;border-radius:8px;border:0;font-size:1rem;text-transform:uppercase}
+.bot button,.btn{padding:12px 18px;border-radius:8px;border:0;background:#14a06b;color:#fff;font-weight:700;font-size:1rem}
+#login{position:fixed;inset:0;background:linear-gradient(135deg,#0b5d3b,#14a06b);display:flex;flex-direction:column;gap:12px;align-items:center;justify-content:center;padding:24px;z-index:5}
+#login input{width:100%;max-width:320px;padding:14px;border-radius:8px;border:0;font-size:1.1rem}
+#res{position:fixed;inset:0;z-index:9;display:none;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:24px}
+#res .ic{font-size:5rem}#res h1{margin:8px 0;font-size:2.2rem}#res h2{margin:6px 0;font-size:1.7rem}#res p{margin:4px 0;font-size:1.15rem}#res small{opacity:.85;margin-top:18px}
+.g{background:#12a150}.y{background:#f2b705;color:#222}.r{background:#d32f2f}
+.hide{display:none!important}#camerr{position:fixed;top:30%;left:16px;right:16px;background:#d32f2f;padding:14px;border-radius:10px;z-index:3}
+</style></head><body>
+<video id="v" muted playsinline></video><div class="frame"></div>
+<div class="top"><div><b id="who">-</b><br><span id="cnt">&nbsp;</span></div><button id="out">Keluar</button></div>
+<div id="camerr" class="hide">Kamera tidak bisa diakses (diblokir izin/browser). Buka halaman ini di Chrome/Safari, izinkan kamera, atau gunakan input manual ID regu di bawah.</div>
+<div class="bot"><div><input id="man" placeholder="Input manual ID regu, mis. R012"><button id="ok">Proses</button></div></div>
+<div id="login"><h2>📷 Scan Daftar Ulang</h2><input id="pin" type="password" placeholder="PIN panitia"><button class="btn" id="go">Masuk</button><div id="lerr"></div></div>
+<div id="res"></div>
+<script>
+const API_URL=''; // isi URL web app (.../exec) HANYA bila file ini dihosting di luar Apps Script
+const $=id=>document.getElementById(id);
+const call=(fn,...a)=>window.google&&google.script&&google.script.run
+ ?new Promise((ok,no)=>google.script.run.withSuccessHandler(ok).withFailureHandler(no)[fn](...a))
+ :fetch(API_URL,{method:'POST',body:JSON.stringify({fn,args:a})}).then(r=>r.json()).then(j=>{if(!j.ok)throw new Error(j.msg);return j.data});
+const err=e=>String(e.message||e).replace(/^Error: /,'');
+let PIN='',busy=false,last='',lastT=0,tm=0;
+const st={get:()=>{try{return localStorage.getItem('kmpin')||''}catch(e){return ''}},set:v=>{try{v?localStorage.setItem('kmpin',v):localStorage.removeItem('kmpin')}catch(e){}}};
+function beep(f,ms){try{const a=new(window.AudioContext||window.webkitAudioContext)(),o=a.createOscillator();o.frequency.value=f;o.connect(a.destination);o.start();setTimeout(()=>{o.stop();a.close()},ms)}catch(e){}}
+function cnt(r){if(r&&r.total!=null)$('cnt').textContent=`Sudah daftar ulang: ${r.sudah} / ${r.total} regu`;}
+
+async function login(p){try{const r=await call('cekPin',p);PIN=p;st.set(p);$('who').textContent='Petugas: '+r.nama;cnt(r);$('login').classList.add('hide');cam();}
+ catch(e){st.set('');$('login').classList.remove('hide');$('lerr').textContent=err(e);}}
+$('go').onclick=()=>login($('pin').value);$('pin').onkeydown=e=>{if(e.key=='Enter')login($('pin').value)};
+$('out').onclick=()=>{st.set('');location.reload();};
+if(st.get())login(st.get());
+
+const v=$('v'),cv=document.createElement('canvas'),cx=cv.getContext('2d',{willReadFrequently:true});
+async function cam(){if(v.srcObject)return;
+ try{v.srcObject=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}},audio:false});await v.play();loop();}
+ catch(e){$('camerr').classList.remove('hide');}}
+function loop(){
+ if(!busy&&v.readyState===v.HAVE_ENOUGH_DATA){const s=Math.min(1,640/v.videoWidth);cv.width=v.videoWidth*s;cv.height=v.videoHeight*s;cx.drawImage(v,0,0,cv.width,cv.height);
+  const q=jsQR(cx.getImageData(0,0,cv.width,cv.height).data,cv.width,cv.height,{inversionAttempts:'dontInvert'});if(q&&q.data)proses(q.data);}
+ requestAnimationFrame(loop);}
+
+async function proses(d,manual){
+ if(busy)return;if(!manual&&d===last&&Date.now()-lastT<4000)return;busy=true;last=d;lastT=Date.now();navigator.vibrate&&navigator.vibrate(60);
+ try{show(await call('scanDU',PIN,d));}catch(e){const m=err(e);if(/PIN/.test(m)){st.set('');location.reload();}show({st:'ERR',info:m});}}
+function show(r){cnt(r);
+ const M={OK:['g','✅','BERHASIL',`<h2>${esc(r.nama)}</h2><p>${esc(r.sekolah)}</p><p>${esc(r.rid)}</p>`,880],
+  SUDAH:['y','⚠️','SUDAH DAFTAR ULANG',`<h2>${esc(r.nama)}</h2><p>${esc(r.sekolah)}</p><p>Sebelumnya: <b>${esc(r.waktu)}</b></p>`,520],
+  BELUM_VALID:['r','❌','BELUM DIVALIDASI',`<h2>${esc(r.nama)}</h2><p>${esc(r.sekolah)}</p><p>Arahkan ke meja admin untuk validasi.</p>`,300],
+  TIDAK:['r','❌','REGU TIDAK DITEMUKAN',`<p>${esc(r.info)}</p>`,300],
+  PESERTA:['r','❌','INI QR PESERTA',`<p>Gunakan QR <b>REGU</b> untuk daftar ulang.</p>`,300],
+  ERR:['r','❌','TERJADI KESALAHAN',`<p>${esc(r.info)}</p>`,300]}[r.st];
+ const b=$('res');b.className=M[0];b.style.display='flex';b.innerHTML=`<div class="ic">${M[1]}</div><h1>${M[2]}</h1>${M[3]}<small>ketuk untuk lanjut scan</small>`;
+ beep(M[4],r.st=='OK'?150:350);clearTimeout(tm);tm=setTimeout(tutup,r.st=='OK'?2500:4000);}
+function tutup(){clearTimeout(tm);$('res').style.display='none';$('man').value='';busy=false;}
+$('res').onclick=tutup;
+$('ok').onclick=()=>{if($('man').value.trim())proses($('man').value.trim(),true)};$('man').onkeydown=e=>{if(e.key=='Enter')$('ok').onclick()};
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+</script></body></html>
